@@ -5,15 +5,14 @@
  */
  
 #include <FastLED.h>
-#define LED_PIN     2
-#define NUM_LEDS    128
-#define CLOCK_MODE 6
-#define SET_TIME 7
-#define PATTERN A0
-CRGB leds[NUM_LEDS];
+#define LED_PIN     2       // LED Pin for controlling LED address 
+#define NUM_LEDS    128     // Defining the number of addressable LEDs used in the circuit 
+#define CLOCK_MODE 6        // Pin definition for the clock mode digital input. 
+#define SET_TIME 7          // Pin definition for the set time mode digital input. 
+#define PATTERN A0          // Pin definition for the potentiometer/pattern set analog input. 
  
 // ************************************************  GLOBAL VARIABLES AND STRUCTURES  ************************************************
-
+CRGB leds[NUM_LEDS];      // Array creation of leds - allows the LED to be address using array [] notation. 
 int clock_mode_reading;   // Switch input reading for clock mode (display time vs show pattern)
 int set_time_reading;     // Switch input reading for set time mode. Changes how fast time increases. 
 int pattern_setting;      // Analog potentiometer reading for pattern mode. Changes which pattern is displayed. 
@@ -22,7 +21,7 @@ int d2 = 0;               //  1s digit of hour
 int d3 = 0;               // 10s digit of minute
 int d4 = 1;               //  1s digit of minute 
 
-// LED assignments of each individual digit of time. 
+// LED assignments of each individual digit of time. Currently not used for purposes other than debugging. 
 int first_digit[12]  = {7, 8, 9, 10, 11, 14, 15, 16, 17, 18, 22, 24};
 int second_digit[12] = {35, 36, 37, 38, 39, 42, 43, 44, 45, 46, 50, 52};
 int third_digit[12]  = {77, 78, 79, 80, 81, 84, 85, 86, 87, 88, 92, 94};
@@ -31,7 +30,7 @@ int background[78]   = {0,1,2,3,4,5,6,13,19,29,21,22,25,26,27,28,30,31,32,33,34,
                        54,55,56,57,58,69,60,61,62,63,65,67,68,69, 70,71,72,73,74,75,76, 82,83, 89, 90,
                        91,93,95,96,97,98,99,100,101,102,103,104,111,117,118,119,121,123,124,125,126,127};
 
-// LED assignments of each row of seven available rows.                        
+// LED assignments of each row of seven available rows. Used when creating backgrounds.                      
 int row1[17] =     {6,19,20,33,34,47,48,61,62,75,76,89,90,103,104,117,118};     
 int row2[18] =    {5,7,18,21,32,35,46,49,60,63,74,77,88,91,102,105,116,119};
 int row3[19] =  {4,8,17,22,31,36,45,50,59,64,73,78,87,92,101,106,115,120,127};
@@ -47,6 +46,7 @@ int perimeter[] = {0,2,1,12,13,26,27,40,41,54,55,68,69,82,83,96,97,110,111,124,1
 // ************************************************ END GLOBALS ********************************************************              
 
 // ************************************************ BACKGROUND PATTERNS ************************************************
+
 void LightRowsOppositeandConverge() {
     int delayt = 20;
     // RED First row :left to right
@@ -182,6 +182,15 @@ void clock_background_gradient() {
 
 // ************************************************ TIME FUNCTIONS *****************************************************
 
+/* Method: write_digit_one, write_digit_two, write_digit_three, write_digit_four 
+ * Inputs: number - the value the user wishes to write to the digit
+ *         red    - the RGB   Red value the user wishes to color the digit 
+ *         green  - the RGB Green value the user wishes to color the digit 
+ *         blue   - the RGB  Blue value the user wishes to color the digit 
+ * Outputs: None 
+ * Description:  Performs a switch function based on the "number" input. Each digit writes the correspond LED based on the desired number. The LED numbers are 
+ *               stored in the global section under the "leds" array. 
+ */
 
 void write_digit_one(int number, int red, int green, int blue) {
      
@@ -639,8 +648,14 @@ void write_digit_four(int number, int red, int green, int blue) {
     };
 }
 
+/* Method: write_time
+ * Inputs: a, b, c, d. These values are the time digit values correspond to time in the format ab:cd, where ab is the hour, and cd is the minute. 
+ * Outputs: None 
+ * Description: Set the time based on the values input. The stack variables r, g, and b1 are the color the user wishes to set the numbers. These inputs 
+ *              call the methods to write the individual digits based on the calculated time. 
+ */
 
-void write_time(int a, int b, int c, int d ) {
+void write_time(int a, int b, int c, int d ) {  
 int r = 255;
 int g = 43;
 int b1 = 12;  
@@ -652,6 +667,15 @@ int b1 = 12;
     write_digit_four (d, r, g, b1);
 }
 
+/* Method: update_time
+ * Inputs: _delay : Time to be delayed before incrementing the minute hand. If the clock is in set time mode, the delay is 50 miliseconds, otherwise, 
+ *                  the delay is 60,000 miliseconds, or 60 seconds. This allows the minute hand to increase by 1 every 60 seconds. 
+ * Outputs: None 
+ * Description: Calls the FastLED.show() method, sets the background to a constant color, then calls the write_time method to write the time to the clock.
+ *              The minute ones digit, or d4, increments by 1 after every iteration. This iteration is delayed by either 50 miliseconds during set time mode, 
+ *              or every 60,000 (60 seconds) during standard mode. The code allows the time to update according to 12 hour format. This prevents the clock
+ *              from displaying values that are impossible with 12 hour format (18:87, 01:74, etc). 
+ */
 
 void update_time(long int _delay) {
     FastLED.show();
