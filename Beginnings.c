@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <time.h>
 
-
 #define NUM_MS_IN_DAY 86400000
 #define NUM_MS_IN_SECOND 1000
 #define NUM_MS_IN_MINUTE 60000
@@ -58,6 +57,37 @@ int32_t printMasterTimerContents(Time_t* masterTimePtr) {
 		masterTimePtr->rolloverCounter, masterTimePtr->secondsCounter,	 masterTimePtr->minutesCounter, masterTimePtr->hoursCounter);
 	return 1;
 }
+
+int32_t potentiometer_adjust_background_color(int pot_input) {
+
+	// Pot input ranges from 0-1024. Make the background color scalable RGB. 
+	// Rainbow: violet blue green yellow orange red 
+	/*
+	violet: 255 0 255
+	blue    0   0 255
+	green   0  255 0
+	yellow 255 255 0 
+	orange 255  165  0
+	red    255   0   0
+	Have the time colors white. 
+
+	TODO Design new patterns. 
+	TODO: make clock only write/refresh time when something changes. No point in constantly refreshing everything all the time. 
+
+	
+	
+	
+	
+	*/
+
+
+
+
+
+
+}
+
+
 
 int main()
 {
