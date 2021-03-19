@@ -13,18 +13,26 @@
 #define NUM_SEC_IN_MINUTE 60
 #define NUM_SEC_IN_HOUR 3600
 
-typedef unsigned char byte;
-
 long long t;
-time_t start, end;
+uint64_t start, end;
 
 typedef struct Time_t {
+	uint64_t rolloverCounter;
+	uint64_t hoursCounter;
+	uint64_t minutesCounter;
+	uint64_t secondsCounter;
+} Time_t;
+/* typedef struct Time_t {
 	uint8_t rolloverCounter;
 	uint8_t hoursCounter;
 	uint16_t minutesCounter;
 	uint32_t secondsCounter;
-} Time_t;
+} Time_t;*/
 
+// Function prototypes
+int32_t updateMasterTimer(Time_t* masterTimePtr, long long time1);
+int32_t createMasterTimerPointer(Time_t* masterTimerPointer);
+int32_t printMasterTimerContents(Time_t* masterTimePtr);
 
 int32_t createMasterTimerPointer(Time_t* masterTimerPointer) {
 	masterTimerPointer->rolloverCounter = 0;
@@ -38,15 +46,15 @@ int32_t createMasterTimerPointer(Time_t* masterTimerPointer) {
 int32_t updateMasterTimer(Time_t* masterTimePtr, long long time1) {
 	// Converts milliseconds into seconds, and the appropriate time values.
 	// Casts the types to match the correct value. 
-	masterTimePtr->rolloverCounter = (uint8_t)  (time1 / NUM_MS_IN_DAY ) ;
-	masterTimePtr->hoursCounter    = (uint8_t)  (  (time1 - masterTimePtr->rolloverCounter * NUM_MS_IN_DAY ) / ( NUM_MS_IN_HOUR  ) );
-	masterTimePtr->minutesCounter  = (uint16_t) ( ((time1 - masterTimePtr->rolloverCounter * NUM_MS_IN_DAY ) / ( NUM_MS_IN_MINUTE ) ) - ( masterTimePtr->hoursCounter )*NUM_MIN_IN_HOUR );
-	masterTimePtr->secondsCounter  = (uint32_t) ( ((time1 - masterTimePtr->rolloverCounter * NUM_MS_IN_DAY ) / ( NUM_MS_IN_SECOND ) ) - ( masterTimePtr->hoursCounter )*NUM_SEC_IN_HOUR - ( masterTimePtr->minutesCounter*NUM_SEC_IN_MINUTE ));
+	masterTimePtr->rolloverCounter =  (time1 / NUM_MS_IN_DAY ) ;
+	masterTimePtr->hoursCounter    =  (  (time1 - masterTimePtr->rolloverCounter * NUM_MS_IN_DAY ) / ( NUM_MS_IN_HOUR  ) );
+	masterTimePtr->minutesCounter  =  ( ((time1 - masterTimePtr->rolloverCounter * NUM_MS_IN_DAY ) / ( NUM_MS_IN_MINUTE ) ) - ( masterTimePtr->hoursCounter )*NUM_MIN_IN_HOUR );
+	masterTimePtr->secondsCounter  =  ( ((time1 - masterTimePtr->rolloverCounter * NUM_MS_IN_DAY ) / ( NUM_MS_IN_SECOND ) ) - ( masterTimePtr->hoursCounter )*NUM_SEC_IN_HOUR - ( masterTimePtr->minutesCounter*NUM_SEC_IN_MINUTE ));
 	return 1;
 }
 
 int32_t printMasterTimerContents(Time_t* masterTimePtr) {
-	printf(" Time Rollover: %u   Seconds Counter: %llu      Minutes Counter: %u      Hours Coutner %u \n ", 
+	printf(" Time Rollover: %llu   Seconds Counter: %llu      Minutes Counter: %llu      Hours Coutner %llu \n ", 
 		masterTimePtr->rolloverCounter, masterTimePtr->secondsCounter,	 masterTimePtr->minutesCounter, masterTimePtr->hoursCounter);
 	return 1;
 }
@@ -56,7 +64,8 @@ int main()
 	Time_t* masterTimer;
 	start = clock();
 	createMasterTimerPointer(&masterTimer);
-	while (1) {
+	
+	while ( 1) {
 		end = clock();
 		t = (end - start)* 10; // milli seconds, long long 64 bit type. 
 		updateMasterTimer(&masterTimer, t);
