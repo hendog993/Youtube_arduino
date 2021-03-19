@@ -22,6 +22,7 @@ typedef struct Time_t {
 	uint64_t minutesCounter;
 	uint64_t secondsCounter;
 } Time_t;
+
 /* typedef struct Time_t {
 	uint8_t rolloverCounter;
 	uint8_t hoursCounter;
@@ -39,7 +40,6 @@ int32_t createMasterTimerPointer(Time_t* masterTimerPointer) {
 	masterTimerPointer->minutesCounter = 0;
 	masterTimerPointer->hoursCounter = 0;
 	masterTimerPointer->secondsCounter = 0;
-	
 	return 1;
 }
 
@@ -65,9 +65,9 @@ int main()
 	start = clock();
 	createMasterTimerPointer(&masterTimer);
 	
-	while ( 1) {
+	while (1) {
 		end = clock();
-		t = (end - start)* 10; // milli seconds, long long 64 bit type. 
+		t = (end - start); // milli seconds, long long 64 bit type. 
 		updateMasterTimer(&masterTimer, t);
 		printf("%llu", t);
 		printMasterTimerContents(&masterTimer);
