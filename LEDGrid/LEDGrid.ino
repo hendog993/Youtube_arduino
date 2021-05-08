@@ -59,6 +59,15 @@ int32_t decompress_object() {
   return s32_returnval;
 }
 
+int32_t decompress_single_row() {
+  int32_t s32_returnval = 1;
+  return s32_returnval;
+}
+
+
+typedef byte pixel [3];
+pixel r0c0 = {100,0,100};
+
 
 void setup() {
     FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
@@ -71,15 +80,6 @@ void setup() {
 
 void loop() {
 
-  int i;
-  for ( i = 0; i < NUM_LEDS ; i++ ) 
-  {
-    leds[pixel_data[i]] = CRGB(100,100,100);
+  leds[2] = CRGB(r0c0[0], r0c0[1],r0c0[2]);
     FastLED.show();
-    delay(50);
-  }
-
-  FastLED.clear();
-  delay(1000);
-    
 }
