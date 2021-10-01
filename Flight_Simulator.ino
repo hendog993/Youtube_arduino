@@ -1,3 +1,36 @@
+/*                                FLIGHT SIMULATOR PROJECT
+ *                        Authors : Henry Gilbert and Kolby Baas
+ *                        Date    : 10/1/2021
+ *                        
+ * 
+ * 
+ * 
+ * 
+ *                                  |
+                                    |
+                                    |
+                                  .-'-.
+                                 ' ___ '
+                       ---------'  .-.  '---------
+       _________________________'  '-'  '_________________________
+        ''''''-|---|--/    \==][^',_m_,'^][==/    \--|---|-''''''
+                      \    /  ||/   H   \||  \    /
+                       '--'   OO   O|O   OO   '--'
+ * 
+ * 
+ * 
+ * 
+ */
+
+
+
+// TODO figure out what rotary encoder will do. Right now it has no real purpose. 
+// TODO figure out what aircraft criteria to add - stall, going too fast, etc. 
+
+// TODO - figure out crash criteria. 
+
+
+
 #include <LiquidCrystal.h>
 
 
@@ -89,6 +122,7 @@ Thawed_Data flight_status ;
 typedef struct Aircraft_Situation_t {
     bool isLandingGearDown = false ; 
     bool isGrounded ; 
+    uint16_t fuel_level ; 
 } Aircraft_Situation ; 
 
 Aircraft_Situation aircraft_situation ; 
@@ -97,11 +131,22 @@ Aircraft_Situation aircraft_situation ;
 // =================== END STRUCT DECLARATIONS ====================
 
 
-// =================== VARS DECLARATIONS ====================
-  
-int32_t count ; // Rotary Encoder Count. 
 
-// =================== END VARS DECLARATIONS ====================
+
+// =================== GLOBAL VARS DECLARATIONS ====================
+
+// TODO These are based off random google searches for a Cessna 172 . Let's follow a formal plane model when we get a chance. 
+int32_t count ; // Rotary Encoder Count. 
+#define MAX_AIRSPEED 176      // knots
+#define MAX_PITCH_DELTA 2     // degrees per second 
+#define MAX_ROLL_DELTA  3     // degrees per second
+#define MAX_RATE_OF_CLIMB 721  // feet per minute 
+#define MAX_ALTITUDE    14000  // feet 
+#define 
+
+
+
+// =================== END GLOBAL VARS DECLARATIONS ====================
 
 
 // =================== FUNCTION DECLARATIONS ====================
@@ -120,7 +165,7 @@ int32_t service_frozen_data ( Frozen_Data * frozenPtr )
 
 {
     int32_t s32_returnval = 0x0004;  // Automatic failure condition, return  val for bad data.
-  
+   
     // Read input values
     uint16_t x_val = analogRead ( js_vrx ) ;
     uint16_t y_val = analogRead ( js_vry ) ;
@@ -150,8 +195,10 @@ int32_t service_frozen_data ( Frozen_Data * frozenPtr )
 /* function - thaw_data
    input - frozen data pointer, thawed data pointer
    return - success or fail code 0x0003
-   Description - calls each subfunction for portion of thawed data that must be serviced
+   Description - calls each subfunction for portion of thawed data that must be serviced and stores values in struct. 
 
+   Heirarchy of Data - acceleration comes first, then pitch, roll, TODO verify this with governing equations . 
+   
 */
 
 int32_t thaw_data ( Frozen_Data * frozenPtr ,
@@ -171,19 +218,26 @@ int32_t thaw_data ( Frozen_Data * frozenPtr ,
     s32_returnval = 0 ;  // Set intermediate return val for secondary part of function.
   
     s32_returnval &= thaw_airspeed ( frozenPtr , thawedPtr ) ;
-   // s32_returnval &= thaw_pitch ( &frozenPtr ) ;
-   // s32_returnval &= thaw_roll ( &frozenPtr ) ;
-   // s32_returnval &= thaw_altitude ( &frozenPtr ) ;
-    //s32_returnval &= thaw_heading ( &frozenPtr ) ;
-   // s32_returnval &= thaw_yaw ( &frozenPtr ) ;
+   // s32_returnval &= thaw_pitch ( frozenPtr ) ;
+   // s32_returnval &= thaw_roll ( frozenPtr ) ;
+   // s32_returnval &= thaw_altitude ( frozenPtr ) ;
+    //s32_returnval &= thaw_heading ( frozenPtr ) ;
+   // s32_returnval &= thaw_yaw ( frozenPtr ) ;
   
     return s32_returnval ;
 }
 
+
+
+
+
 /* function - thaw_airpseed 
    input -  pointer to thawed data 
    return - success/error code 
-   Description - Airspeed must always be decellerating, as an applied acceleration is the only way to create a velocity. 
+   Description - Airspeed must always be decellerating, as an applied acceleration is the only way to create a velocity.
+                 The higher the throttle input, the greater the acceleration/less the acceleration decreases per second. 
+                 Based on configuration data, the max airspeed is 172 knots. Minimum is 0. Limit these values in the func. 
+                 Formula - 
 */
 
 int32_t thaw_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
@@ -196,6 +250,11 @@ int32_t thaw_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
     
     return s32_returnval ;
 }
+
+
+
+
+
 
 /* function - 
    input - 
@@ -272,6 +331,12 @@ int32_t service_rotary_encoder ( int32_t * counter  ) {
 
 // ==================== END FUNCTION DECLARATIONS ==================
 
+
+
+
+
+
+
 // ==================== DEBUG FUNCTIONS ======================
 
 int32_t read_frozen_struct ( Frozen_Data * frozenPtr ) {
@@ -279,7 +344,7 @@ int32_t read_frozen_struct ( Frozen_Data * frozenPtr ) {
     Serial.print ( frozenPtr->yoke_x ) ;
     Serial.print ( "    Yoke Y: ") ;
     Serial.print ( frozenPtr->yoke_y ) ;
-    Serial.print ( "    Yoke SW: ") ;
+    Serial.print ( "    Throttle In : ") ;
     Serial.print ( frozenPtr->analog_pot ) ;
     Serial.print ( "\n ") ;
 }
@@ -312,10 +377,24 @@ void print_raw_inputs () {
     Serial.print ( "\n " );
 
 }
+// ==================== END DEBUG FUNCTIONS ======================
+
+
+
+
+
+
 
 
 
 // =================== MAIN FUNCTIONS  ====================
+
+
+// Timer Variables // 
+unsigned long startMillis;  //some global variables available anywhere in the program
+unsigned long currentMillis;
+const unsigned long period = 50;  //the value is a number of milliseconds
+int32_t error_code ; 
 
 void setup() {
     // set up the LCD's number of columns and rows:
@@ -326,6 +405,7 @@ void setup() {
     pinMode( js_vrx, INPUT );
     pinMode( js_vry, INPUT );
     pinMode( js_sw , INPUT );
+    pinMode (13, OUTPUT ) ;
     
     // Rotary Encoder inputs 
     pinMode( rotEnc_dt, INPUT_PULLUP );
@@ -337,19 +417,33 @@ void setup() {
     attachInterrupt( digitalPinToInterrupt( rotEnc_clk ) , service_rotary_encoder , CHANGE );
     
     pinMode( status_light, OUTPUT );
-  
-    // Value change error flag interrupt routine
-
-    int32_t error_code ; 
+ 
+    startMillis = millis();
 }
+
 
 
 void loop() {
 
-    lcd.setCursor( 0, 1 );
+    currentMillis = millis();  //get the current "time" (actually the number of milliseconds since the program started)
+    if ( currentMillis - startMillis >= period )  //test whether the period has elapsed
+    
+    {
+    
+        // ================= BEGIN MAIN EXECUTION CODE  ====================== 
+        digitalWrite(status_light, !digitalRead(status_light));  // Display the state of the timer - leave for debug purposes 
+        error_code = service_frozen_data ( &flsim_inputs) ;
+        read_frozen_struct ( &flsim_inputs ) ;
+        
+
+
+        // =================   END MAIN EXECUTION CODE ======================
+        
+        startMillis = currentMillis;  //IMPORTANT to save the start time of the current LED state.
+    
+    }
   
-    int32_t status1 = service_frozen_data ( &flsim_inputs ) ;
-    read_frozen_struct ( &flsim_inputs ) ;
-    // print_raw_inputs ( ) ;
-    lcd.print ( status1 ) ;
 }
+
+
+// =================== END MAIN FUNCTIONS  ====================
