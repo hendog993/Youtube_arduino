@@ -3,25 +3,28 @@
  * 1. Write images using large format and calculate bytes/data used
  * 2. Write compression algorithm and calculate bytes saved
  * 3. Write decompression algorithm to rewrite original image
- * 
- * 
+ */
+
+
+/*
+ * Progression
+ * 1. Get structure format
+ * 2. Draw RGB only (255) images
+ * 3. Compress and decompress properly.
+ * 4. Calculate bytes saved 
  */
 
 
 /*Compression format
- * 
+ * 6 rows of 10 values 
  * per 
- * per row: [2 bit command][6 bit num columns]
- * 
+ * per row: [4 bit number (max is 10) 4 bit map to color: RED BLUE GREEN or OFF] 
  * 
  */
 
 
-
-
 #include <FastLED.h>
 #include <stdint.h>
-
 
 #define LED_PIN 2
 #define NUM_LEDS 60
@@ -29,6 +32,47 @@ CRGB leds[NUM_LEDS];
 #define RESOLUTION_X 10
 #define RESOLUTION_Y 6
 
+// Image format: should simply be an array of bytes.
+// 60 pixels, 3 RGB values, 180 bytes total. 
+typedef byte image[180];
+
+// Single row format test. 
+
+image pic1 = {233,243,101, 23,10,56, 43,65,700, 63,12,90, 12,12,12, 44,44,44, 101,206, 43, 12,90, 72, 12,12,12,51,55,90};
+image * picptr = &pic1;
+
+
+byte GetLengthOfImage (image imgPtr ) {
+
+  return sizeof(imgPtr) / sizeof(imgPtr[0]);
+  
+}
+
+
+int32_t imgCheckFormatValid(image  imagePointer ) 
+{
+  
+  int32_t s32_returnval = 1;
+  byte lengthOfArray = GetLengthOfImage(imagePointer);
+  Serial.println(lengthOfArray);
+  if (imagePointer == NULL || 
+      lengthOfArray > 180
+    )
+  {
+      s32_returnval = 0;
+      return s32_returnval;
+  }
+  
+  // Iterate through and check if any value is greater than 255. If yes, exit routine and return error. 
+  for (int i = 0; i < lengthOfArray ; i++) {
+    if ( imagePointer[i] > 255 ) {
+      s32_returnval = 0;
+      return s32_returnval;
+    }
+  } 
+  
+  return s32_returnval;
+}
 
 
 byte pixel_data[60] = 
@@ -64,10 +108,18 @@ int32_t decompress_single_row() {
   return s32_returnval;
 }
 
+void GetPtrAndIncBufferPtr() {
 
-typedef byte pixel [3];
-pixel r0c0 = {100,0,100};
+  
+}
 
+
+int32_t WriteImage ( image  imgPtr )
+{
+  int32_t s32_returnval;
+  s32_returnval &= imgCheckFormatValid(imgPtr);
+  
+}
 
 void setup() {
     FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
@@ -79,7 +131,6 @@ void setup() {
 
 
 void loop() {
-
-  leds[2] = CRGB(r0c0[0], r0c0[1],r0c0[2]);
-    FastLED.show();
+  
+  int32_t val = imgCheckFormatValid(pic1);
 }
