@@ -108,7 +108,8 @@ Frozen_Data flsim_inputs ;
 typedef struct Thawed_Data_t {
     // TODO figure out these uits/types, what do they need to be in.
     // TODO should we include here things like grounded, landing gear down, etc. Maybe make that a separate struct. 
-    byte airspeed ;          // knots - 
+    float ground_speed ;          // knots - 
+    float true_airspeed ; 
     float altitude ;          // feet 
     float pitch ;             // degrees
     float roll ;              // degrees
@@ -123,6 +124,10 @@ typedef struct Aircraft_Situation_t {
     bool isLandingGearDown = false ; 
     bool isGrounded ; 
     uint16_t fuel_level ; 
+    float latitude ; 
+    float longitude ; 
+    float oat ; 
+    float tat ; 
 } Aircraft_Situation ; 
 
 Aircraft_Situation aircraft_situation ; 
@@ -142,7 +147,7 @@ int32_t count ; // Rotary Encoder Count.
 #define MAX_ROLL_DELTA  3     // degrees per second
 #define MAX_RATE_OF_CLIMB 721  // feet per minute 
 #define MAX_ALTITUDE    14000  // feet 
-#define 
+#define MAX_ACCELERATION 150   // ft/s2
 
 
 
@@ -217,7 +222,8 @@ int32_t thaw_data ( Frozen_Data * frozenPtr ,
   
     s32_returnval = 0 ;  // Set intermediate return val for secondary part of function.
   
-    s32_returnval &= thaw_airspeed ( frozenPtr , thawedPtr ) ;
+    s32_returnval &= thaw_true_airspeed ( frozenPtr , thawedPtr ) ;
+    //s32_returnval &= thaw_groundspeed ( frozenPtr , thawedPtr ) ;
    // s32_returnval &= thaw_pitch ( frozenPtr ) ;
    // s32_returnval &= thaw_roll ( frozenPtr ) ;
    // s32_returnval &= thaw_altitude ( frozenPtr ) ;
@@ -231,35 +237,73 @@ int32_t thaw_data ( Frozen_Data * frozenPtr ,
 
 
 
+
+
+
+
 /* function - thaw_airpseed 
-   input -  pointer to thawed data 
+   input -  pointer to frozen data , pointer to thawed data. 
    return - success/error code 
-   Description - Airspeed must always be decellerating, as an applied acceleration is the only way to create a velocity.
-                 The higher the throttle input, the greater the acceleration/less the acceleration decreases per second. 
-                 Based on configuration data, the max airspeed is 172 knots. Minimum is 0. Limit these values in the func. 
-                 Formula - 
+   Description - calculates the new airspeed based on throttle input. Since there is always a constant decelleration, 
+                 the formula for airspeed is : 
+                 V = airspeed
+                 T = period = 50ms (config data)
+                 D = Decelleration - constant (think of cars, as they are rolling there is a constant applied decelleration. 
+                                     A car will stop moving if you quit applying acceleration
+                 P = potentiometer value - 0-1024
+                 A = alpha coefficient for converting pot value into standard offset 
+                 Vnew = Vold + T(AP-D)     OR dV = T(AP-D) . 
+                 The max change in velocity should be 10 knots per second (this must be fine tuned). This is per SECOND.
+                 Per calculation, aka per 50 ms, dV max = 10/20 = 0.5. D=5/20 = .25
+                        .5 = (A*P-.25). 
+                        .75 = A*P. At max accel, P = 1024. So A, the offset value, equals 0.00073. 
+                 At max throttle, dV = +10 kts/second
+                 At min throttle, dV = -5  kts/second 
+                 
 */
 
-int32_t thaw_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
+int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 {
     int32_t s32_returnval = 0x0005 ; // Error code for thaw airspeed function
 
     if (  ( frozenPtr == NULL ) ||
           ( thawedPtr == NULL ) ) 
     {
-        return s32_returnval ; // Error - can't have null pointers. TODO necessary because of initial check ? 
-      
+        return s32_returnval ; // Error - can't have null pointers. TODO necessary because of initial check ? TODO 
     }
 
-    byte airspeed_acceleraation = frozenPtr-> analog_pot ;
+    // TODO make these global variables? Are they going to be used elsewhere? 
+    float old_airspeed = thawedPtr->true_airspeed;
+    float A = 0.00073f;
+    float D = .25f;
     
-    
+    thawedPtr->true_airspeed = old_airspeed + (A * frozenPtr->analog_pot - D);  
+
+    // Limit the airspeed between the min 0 and the max 176. 
+    if ( thawedPtr->true_airspeed  > MAX_AIRSPEED ) thawedPtr->true_airspeed  = MAX_AIRSPEED ; 
+    if ( thawedPtr->true_airspeed  < 0 ) thawedPtr->true_airspeed  = 0 ; 
+
+    s32_returnval = 0; // Exit success 
     
     return s32_returnval ;
 }
 
+int32_t thaw_groundspeed ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr ) 
+
+{
+    if (  ( frozenPtr == NULL ) ||
+          ( thawedPtr == NULL ) ) 
+    {
+        return s32_returnval ; // Error - can't have null pointers. TODO necessary because of initial check ? TODO 
+    }
+
+    
 
 
+    s32_returnval = 0; // Exit success 
+    
+    return s32_returnval ;
+}
 
 
 
@@ -346,6 +390,10 @@ int32_t service_rotary_encoder ( int32_t * counter  ) {
 
 // ==================== DEBUG FUNCTIONS ======================
 
+/*
+*   Function : read_frozen_struct 
+*   Description : debug function - prints data 
+*/
 int32_t read_frozen_struct ( Frozen_Data * frozenPtr ) {
     Serial.print ( "Yoke X: ") ;
     Serial.print ( frozenPtr->yoke_x ) ;
@@ -428,7 +476,7 @@ void setup() {
     startMillis = millis();
 }
 
-
+int counter = 0;
 
 void loop() {
 
@@ -436,14 +484,16 @@ void loop() {
     if ( currentMillis - startMillis >= period )  //test whether the period has elapsed
     
     {
-    
+        lcd.setCursor(0,0);
         // ================= BEGIN MAIN EXECUTION CODE  ====================== 
         digitalWrite(status_light, !digitalRead(status_light));  // Display the state of the timer - leave for debug purposes 
         error_code = service_frozen_data ( &flsim_inputs) ;
-        read_frozen_struct ( &flsim_inputs ) ;
+        read_frozen_struct ( &flsim_inputs ) ;                      // Debug function - not critical to operation 
+        thaw_data ( &flsim_inputs , &flight_status) ;
+        counter += 1 ;
+        lcd.print(counter);
         
-
-
+    
         // =================   END MAIN EXECUTION CODE ======================
         
         startMillis = currentMillis;  //IMPORTANT to save the start time of the current LED state.
