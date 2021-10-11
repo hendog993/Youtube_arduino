@@ -24,11 +24,12 @@
 
 
 
-// TODO figure out what rotary encoder will do. Right now it has no real purpose. 
+// TODO figure out what rotary encoder will do. Right now it has no real purpose. - can be input for lat, lon, heading, etc. 
 // TODO figure out what aircraft criteria to add - stall, going too fast, etc. 
-
+// TODO major software config - transmit serial data to instrument panel bus to Arduino NANO, which controlls stepper motors for instruments. 
+// TODO instrument design - proof of concept. 
 // TODO - figure out crash criteria. 
-
+// TODO build Kolby a circuit so he can test things . 
 
 
 #include <LiquidCrystal.h>
@@ -44,6 +45,9 @@
      pin  2 - Rotary Encoder DT      !! Interrupt Driven Pin
      pin  3 - Rotary Encoder CLK     !! Interrupt Driven Pin
      pin  4 - Joy Stick SW
+   pin  5 - Crash status 
+   pin  6 - Grounded/airborne status 
+   
      pin 11 - Rotary Encoder SW
      pin 12 - Status Light
      pin 22 - LCD RS
@@ -79,7 +83,9 @@
 #define js_sw  4
 
 // Digital Output
-#define status_light 12
+#define clock_status 12
+#define crash_status 5 
+#define grounded_status 6
 
 // =================== END PIN DECLARATIONS ====================
 
@@ -147,15 +153,7 @@ int32_t count ; // Rotary Encoder Count.
 #define MAX_ROLL_DELTA  3     // degrees per second
 #define MAX_RATE_OF_CLIMB 721  // feet per minute 
 #define MAX_ALTITUDE    14000  // feet 
-#define MAX_ACCELERATION 150   // ft/s2  TODO remove this it may be unnecessary 
-#define TAKEOFF_SPEED 60       // 
-
-
-// TODO verify these are correct - these are just random numbers I made up. 
-#define MAX_PITCH 45
-#define MAX_ROLL 45
-#define MIN_PITCH -45
-#define MIN_ROLL -45
+#define MAX_ACCELERATION 150   // ft/s2
 
 
 
@@ -164,14 +162,12 @@ int32_t count ; // Rotary Encoder Count.
 
 // =================== FUNCTION DECLARATIONS ====================
 /*
-  function : service_frozen_data ()
+  function: service_frozen_data ()
   inputs : pointer to frozen struct
   return : status for success -
-  Description : Takes raw input data, runs validity check, and stores them in frozen struct. 
     uint16_t yoke_x ;
     uint16_t yoke_y ;
     uint16_t analog_pot ;
-
 */
 
 int32_t service_frozen_data ( Frozen_Data * frozenPtr )
@@ -205,17 +201,18 @@ int32_t service_frozen_data ( Frozen_Data * frozenPtr )
     return s32_returnval ;
 }
 
-
-
-
 /* function - thaw_data
    input - frozen data pointer, thawed data pointer
    return - success or fail code 0x0003
    Description - calls each subfunction for portion of thawed data that must be serviced and stores values in struct. 
-
    Heirarchy of Data - acceleration comes first, then pitch, roll, TODO verify this with governing equations . 
    
 */
+
+// TODO add criteria for crash - crash resets all simulation and asserts red LED status light
+// TODO add stall criteria 
+// TODO add wind  criteria 
+// TODO rotary encoder - add input for wind vector calculation to add criteria for adjusted airspeed - engine speed derivative ? 
 
 int32_t thaw_data ( Frozen_Data * frozenPtr ,
                     Thawed_Data * thawedPtr )
@@ -235,17 +232,9 @@ int32_t thaw_data ( Frozen_Data * frozenPtr ,
   
     s32_returnval &= thaw_true_airspeed ( frozenPtr , thawedPtr ) ;
     //s32_returnval &= thaw_groundspeed ( frozenPtr , thawedPtr ) ;
-
-    // TODO ensure only in air situations can be thawed when not grounded - add grounded/air criteria . 
-    /*
-     * if aircraft is in air:
-     *  s32_returnval &= thaw_pitch ( frozenPtr ) ;
-         s32_returnval &= thaw_roll ( frozenPtr ) ;
-         s32_returnval &= thaw_altitude ( frozenPtr ) ;
-     * 
-     * 
-     */
-  
+   // s32_returnval &= thaw_pitch ( frozenPtr ) ;
+   // s32_returnval &= thaw_roll ( frozenPtr ) ;
+   // s32_returnval &= thaw_altitude ( frozenPtr ) ;
     //s32_returnval &= thaw_heading ( frozenPtr ) ;
    // s32_returnval &= thaw_yaw ( frozenPtr ) ;
   
@@ -260,7 +249,7 @@ int32_t thaw_data ( Frozen_Data * frozenPtr ,
 
 
 
-/* function - thaw_airpseed 
+/* function - thaw_true_airpseed 
    input -  pointer to frozen data , pointer to thawed data. 
    return - success/error code 
    Description - calculates the new airspeed based on throttle input. Since there is always a constant decelleration, 
@@ -271,13 +260,14 @@ int32_t thaw_data ( Frozen_Data * frozenPtr ,
                                      A car will stop moving if you quit applying acceleration
                  P = potentiometer value - 0-1024
                  A = alpha coefficient for converting pot value into standard offset 
-                 Vnew = Vold + T(AP-D), so  dV = T(AP-D) . 
+                 Vnew = Vold + T(AP-D)     OR dV = T(AP-D) . 
                  The max change in velocity should be 10 knots per second (this must be fine tuned). This is per SECOND.
                  Per calculation, aka per 50 ms, dV max = 10/20 = 0.5. D=5/20 = .25
                         .5 = (A*P-.25). 
                         .75 = A*P. At max accel, P = 1024. So A, the offset value, equals 0.00073. 
                  At max throttle, dV = +10 kts/second
-                 At min throttle, dV = -5  kts/second                
+                 At min throttle, dV = -5  kts/second 
+                 
 */
 
 int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
@@ -292,18 +282,15 @@ int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 
     // TODO make these global variables? Are they going to be used elsewhere? 
     float old_airspeed = thawedPtr->true_airspeed;
-    float new_airspeed ; 
     float A = 0.00073f;
     float D = .25f;
     
-    new_true_airspeed= old_airspeed + (A * frozenPtr->analog_pot - D);  
+    thawedPtr->true_airspeed = old_airspeed + (A * frozenPtr->analog_pot - D);   // TODO update this. I don't like adding things directly to a struct if the values aren't right initially 
 
     // Limit the airspeed between the min 0 and the max 176. 
-    if ( new_true_airspeed > MAX_AIRSPEED ) new_true_airspeed  = MAX_AIRSPEED ; 
-    if ( new_true_airspeed  < 0 ) new_true_airspeed  = 0 ; 
+    if ( thawedPtr->true_airspeed  > MAX_AIRSPEED ) thawedPtr->true_airspeed  = MAX_AIRSPEED ; 
+    if ( thawedPtr->true_airspeed  < 0 ) thawedPtr->true_airspeed  = 0 ; 
 
-    thawedPtr->true_airspeed = new_true_airspeed ; 
-    
     s32_returnval = 0; // Exit success 
     
     return s32_returnval ;
@@ -315,17 +302,18 @@ int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 
 
 
-/* function - 
-   input -  pointer to frozen data , pointer to thawed data. 
-   return - 
-   Description -            
+
+
+
+/* function - thaw_groundspeed 
+   input - frozen Pointer and thawed Pointer 
+   return - exit success or failure 
+   Description - calculates groundspeed as a function of airspeed 
 */
 
 int32_t thaw_groundspeed ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr ) 
 
 {
-    int32_t s32_returnval = 0x0060;  // TODO make sure this error code is correct 
-    
     if (  ( frozenPtr == NULL ) ||
           ( thawedPtr == NULL ) ) 
     {
@@ -342,36 +330,17 @@ int32_t thaw_groundspeed ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 
 
 
-
-
-
-
-
-/* function - thaw_pitch 
-   input - frozenPtr, thawedPtr
-   return - Error code success or failure 
+/* function - 
+   input - 
+   return - 
    Description - 
 */
 
-int32_t thaw_pitch ( Frozen_Data * frozenPtr, Thawed_Data * thawedPtr )
+int32_t thaw_pitch ( Thawed_Data * thawedPtr )
 {
-  
     int32_t s32_returnval = 0x0006 ; // Error code for thaw pitch function
-
-    
-
-
-
-
-
-    
     return s32_returnval ;
 }
-
-
-
-
-
 
 /* function - 
    input - 
@@ -386,11 +355,6 @@ int32_t thaw_roll ( Thawed_Data * thawedPtr )
 }
 
 
-
-
-
-
-
 /* function - 
    input - 
    return - 
@@ -403,11 +367,6 @@ int32_t thaw_altitude ( Thawed_Data * thawedPtr )
     return s32_returnval ;
 }
 
-
-
-
-
-
 /* function - 
    input - 
    return - 
@@ -419,11 +378,6 @@ int32_t thaw_heading ( Thawed_Data * thawedPtr )
     int32_t s32_returnval = 0x0009 ; // Error code for thaw heading function
     return s32_returnval ;
 }
-
-
-
-
-
 
 
 /* function - 
@@ -441,7 +395,6 @@ int32_t thaw_yaw ( Thawed_Data * thawedPtr )
 /*
    function - service_rotary_encoder
    input -
-
 */
 
 
@@ -540,7 +493,7 @@ void setup() {
     attachInterrupt( digitalPinToInterrupt( rotEnc_dt ) , service_rotary_encoder , CHANGE );
     attachInterrupt( digitalPinToInterrupt( rotEnc_clk ) , service_rotary_encoder , CHANGE );
     
-    pinMode( status_light, OUTPUT );
+    pinMode( clock_status, OUTPUT );
  
     startMillis = millis();
 }
@@ -555,7 +508,7 @@ void loop() {
     {
         lcd.setCursor(0,0);
         // ================= BEGIN MAIN EXECUTION CODE  ====================== 
-        digitalWrite(status_light, !digitalRead(status_light));  // Display the state of the timer - leave for debug purposes 
+        digitalWrite(clock_status, !digitalRead(clock_status));  // Display the state of the timer - leave for debug purposes 
         error_code = service_frozen_data ( &flsim_inputs) ;
         read_frozen_struct ( &flsim_inputs ) ;                      // Debug function - not critical to operation 
         thaw_data ( &flsim_inputs , &flight_status) ;
