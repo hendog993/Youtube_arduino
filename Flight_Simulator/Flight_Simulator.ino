@@ -296,7 +296,11 @@ int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
     float A = 0.00073f;
     float D = .25f;
     
+<<<<<<< HEAD
     new_true_airspeed= old_airspeed + (A * frozenPtr->analog_pot - D);  
+=======
+    thawedPtr->true_airspeed = old_airspeed + (A * frozenPtr->analog_pot - D);  
+>>>>>>> parent of f90869b (Basic changes)
 
     // Limit the airspeed between the min 0 and the max 176. 
     if ( new_true_airspeed > MAX_AIRSPEED ) new_true_airspeed  = MAX_AIRSPEED ; 
@@ -309,6 +313,7 @@ int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
     return s32_returnval ;
 }
 
+<<<<<<< HEAD
 
 
 
@@ -321,6 +326,8 @@ int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
    Description -            
 */
 
+=======
+>>>>>>> parent of f90869b (Basic changes)
 int32_t thaw_groundspeed ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr ) 
 
 {
