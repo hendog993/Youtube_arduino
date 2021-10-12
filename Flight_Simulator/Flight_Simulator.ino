@@ -20,7 +20,7 @@
  * 
  * 
  * 
- */
+ */ 
 
 
 
@@ -31,63 +31,9 @@
 // TODO - figure out crash criteria. 
 // TODO build Kolby a circuit so he can test things . 
 
-
+#include "Globals.h"
 #include <LiquidCrystal.h>
 
-
-/*      Interface Control
-     ========= Analog Pins =========
-     pin A0 - Potentionmeter Input
-     pin A1 - Joystick Input VRx
-     pin A2 - Joystick Input VRy
-  
-     ========= Digital Pins =========
-     pin  2 - Rotary Encoder DT      !! Interrupt Driven Pin
-     pin  3 - Rotary Encoder CLK     !! Interrupt Driven Pin
-     pin  4 - Joy Stick SW
-   pin  5 - Crash status 
-   pin  6 - Grounded/airborne status 
-   
-     pin 11 - Rotary Encoder SW
-     pin 12 - Status Light
-     pin 22 - LCD RS
-     pin 23 - LCD E
-     pin 24 - LCD D4
-     pin 25 - LCD D5
-     pin 26 - LCD D6
-     pin 27 - LCD D7
-*/
-
-
-// =================== PIN DECLARATIONS ====================
-
-// LCD Pins
-#define lcd_rs 22
-#define lcd_e  23
-#define lcd_d4 24
-#define lcd_d5 25
-#define lcd_d6 26
-#define lcd_d7 27
-
-// Pot Input pin
-#define throttle_in A0
-
-// Rotary Encoder Pins - all pins are interrupt capable 
-#define rotEnc_dt 2
-#define rotEnc_clk 3
-#define rotEnc_sw 18 
-
-// Joy Stick Pins
-#define js_vrx A1
-#define js_vry A2
-#define js_sw  4
-
-// Digital Output
-#define clock_status 12
-#define crash_status 5 
-#define grounded_status 6
-
-// =================== END PIN DECLARATIONS ====================
 
 
 
@@ -100,6 +46,8 @@ LiquidCrystal lcd ( lcd_rs, lcd_e, lcd_d4, lcd_d5, lcd_d6, lcd_d7 );
 
 // =================== STRUCT  DECLARATIONS ====================
 
+
+// TODO should we include digital inputs here? Service all digital inputs and analog at once? Might be better to break it up. 
 typedef struct Frozen_Data_t {
     // Analog Data
     uint16_t yoke_x ;
@@ -127,8 +75,10 @@ typedef struct Thawed_Data_t {
 Thawed_Data flight_status ;
 
 typedef struct Aircraft_Situation_t {
-    bool isLandingGearDown = false ; 
-    bool isGrounded ; 
+    bool landing_gear_down_status = false ;   
+    bool grounded_status = true ; 
+    bool stall_status = false ; 
+    bool crash_stats ; 
     uint16_t fuel_level ; 
     float latitude ; 
     float longitude ; 
@@ -147,13 +97,16 @@ Aircraft_Situation aircraft_situation ;
 // =================== GLOBAL VARS DECLARATIONS ====================
 
 // TODO These are based off random google searches for a Cessna 172 . Let's follow a formal plane model when we get a chance. 
-int32_t count ; // Rotary Encoder Count. 
+// TODO make sure these are actually used? 
+
+int32_t rotEnc_count ; // Rotary Encoder Count. 
 #define MAX_AIRSPEED 176      // knots
 #define MAX_PITCH_DELTA 2     // degrees per second 
 #define MAX_ROLL_DELTA  3     // degrees per second
 #define MAX_RATE_OF_CLIMB 721  // feet per minute 
 #define MAX_ALTITUDE    14000  // feet 
-#define MAX_ACCELERATION 150   // ft/s2
+#define MAX_ACCELERATION 150   // ft/s2 
+#define LIFTOFF_AIRSPEED 60    // knots 
 
 
 
@@ -215,35 +168,75 @@ int32_t service_frozen_data ( Frozen_Data * frozenPtr )
 // TODO rotary encoder - add input for wind vector calculation to add criteria for adjusted airspeed - engine speed derivative ? 
 
 int32_t thaw_data ( Frozen_Data * frozenPtr ,
-                    Thawed_Data * thawedPtr )
-
+                    Thawed_Data * thawedPtr , 
+                    Aircraft_Situation * aircraftSituationPtr )
 {
     int32_t s32_returnval = 0x0003 ; // Error code for thawed data function
   
     if ( ( frozenPtr == NULL ) ||
-         ( thawedPtr == NULL ) )
+         ( thawedPtr == NULL ) || 
+         ( aircraftSituationPtr == NULL ) ) 
     {
-      return s32_returnval ;
+        return s32_returnval ;
     }
   
     // Call sub functions for each successive thawed data point
   
     s32_returnval = 0 ;  // Set intermediate return val for secondary part of function.
-  
+
+
+    // Perform calculations to measurements that can be calculated when grounded . 
     s32_returnval &= thaw_true_airspeed ( frozenPtr , thawedPtr ) ;
-    //s32_returnval &= thaw_groundspeed ( frozenPtr , thawedPtr ) ;
-   // s32_returnval &= thaw_pitch ( frozenPtr ) ;
-   // s32_returnval &= thaw_roll ( frozenPtr ) ;
-   // s32_returnval &= thaw_altitude ( frozenPtr ) ;
-    //s32_returnval &= thaw_heading ( frozenPtr ) ;
-   // s32_returnval &= thaw_yaw ( frozenPtr ) ;
+    
+    // Check to see if aircraft is grounded or airborne 
+    check_aircraft_situation ( frozenPtr , thawedPtr , aircraftSituationPtr ) ;
+
+
+    service_aircraft_situation_outputs ( aircraftSituationPtr ) ;
+    // Only perform these calculations if aircraft is airborne 
+    if ( aircraftSituationPtr->grounded_status == false ) 
+    { 
+        digitalWrite ( 5, HIGH ) ; 
+        s32_returnval &= thaw_groundspeed ( frozenPtr , thawedPtr ) ;
+        s32_returnval &= thaw_pitch ( frozenPtr , thawedPtr ) ;
+        s32_returnval &= thaw_roll ( frozenPtr , thawedPtr ) ;
+        s32_returnval &= thaw_altitude ( frozenPtr , thawedPtr ) ;
+        s32_returnval &= thaw_heading ( frozenPtr , thawedPtr ) ;
+        s32_returnval &= thaw_yaw ( frozenPtr , thawedPtr ) ;
+    }
+
   
     return s32_returnval ;
 }
 
+// check grounded status 
+
+int32_t check_aircraft_situation (  Frozen_Data * frozenPtr ,
+                                    Thawed_Data * thawedPtr , 
+                                    Aircraft_Situation * aircraftSituationPtr ) 
+{
+    // Check grounded status 
+    if ( ( thawedPtr->true_airspeed >= LIFTOFF_AIRSPEED ) && 
+         ( frozenPtr->yoke_x > 650 )  // Todo is this efficient ? 
+       )
+   {
+      aircraftSituationPtr->grounded_status = false ; 
+   } 
+  return 0 ;
+}
 
 
-
+int32_t service_aircraft_situation_outputs ( Aircraft_Situation * aircraftSituationPtr  ) 
+{
+    if (aircraftSituationPtr -> grounded_status = true ) 
+    {
+      digitalWrite ( grounded_status_out , HIGH ) ;
+    }
+    else 
+    {
+      digitalWrite ( grounded_status_out , LOW ) ;
+    }
+}
 
 
 
@@ -267,7 +260,6 @@ int32_t thaw_data ( Frozen_Data * frozenPtr ,
                         .75 = A*P. At max accel, P = 1024. So A, the offset value, equals 0.00073. 
                  At max throttle, dV = +10 kts/second
                  At min throttle, dV = -5  kts/second 
-                 
 */
 
 int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
@@ -280,17 +272,20 @@ int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
         return s32_returnval ; // Error - can't have null pointers. TODO necessary because of initial check ? TODO 
     }
 
-    // TODO make these global variables? Are they going to be used elsewhere? 
+    // TODO make these global variables? Are they going to be used elsewhere? Also, possibly make these the general case calculations 
+    float new_airspeed ; 
     float old_airspeed = thawedPtr->true_airspeed;
     float A = 0.00073f;
     float D = .25f;
     
-    thawedPtr->true_airspeed = old_airspeed + (A * frozenPtr->analog_pot - D);   // TODO update this. I don't like adding things directly to a struct if the values aren't right initially 
+    new_airspeed = old_airspeed + (A * frozenPtr->analog_pot - D);   // TODO update this. I don't like adding things directly to a struct if the values aren't right initially 
 
     // Limit the airspeed between the min 0 and the max 176. 
-    if ( thawedPtr->true_airspeed  > MAX_AIRSPEED ) thawedPtr->true_airspeed  = MAX_AIRSPEED ; 
-    if ( thawedPtr->true_airspeed  < 0 ) thawedPtr->true_airspeed  = 0 ; 
+    // Todo make these inline conditional if 
+    if ( new_airspeed > MAX_AIRSPEED ) new_airspeed = MAX_AIRSPEED ; 
+    if  (new_airspeed < 0 ) new_airspeed = 0 ; 
 
+    thawedPtr->true_airspeed  = new_airspeed ; 
     s32_returnval = 0; // Exit success 
     
     return s32_returnval ;
@@ -314,6 +309,8 @@ int32_t thaw_true_airspeed (Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 int32_t thaw_groundspeed ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr ) 
 
 {
+
+    int32_t s32_returnval = 0x000B ;  
     if (  ( frozenPtr == NULL ) ||
           ( thawedPtr == NULL ) ) 
     {
@@ -330,15 +327,18 @@ int32_t thaw_groundspeed ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 
 
 
-/* function - 
-   input - 
-   return - 
-   Description - 
+/* function - thaw_pitch
+   input - frozen data pointer, thawed data pointer 
+   return - exit code 
+   Description - Thaws pitch based on true airspeed and grounded status . 
+   TODO make this only available when not grounded . 
 */
 
-int32_t thaw_pitch ( Thawed_Data * thawedPtr )
+int32_t thaw_pitch ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr  )
 {
     int32_t s32_returnval = 0x0006 ; // Error code for thaw pitch function
+    
+    
     return s32_returnval ;
 }
 
@@ -348,7 +348,7 @@ int32_t thaw_pitch ( Thawed_Data * thawedPtr )
    Description - 
 */
 
-int32_t thaw_roll ( Thawed_Data * thawedPtr )
+int32_t thaw_roll ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 {
     int32_t s32_returnval = 0x0007 ; // Error code for thaw roll function
     return s32_returnval ;
@@ -361,7 +361,7 @@ int32_t thaw_roll ( Thawed_Data * thawedPtr )
    Description - 
 */
 
-int32_t thaw_altitude ( Thawed_Data * thawedPtr )
+int32_t thaw_altitude ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 {
     int32_t s32_returnval = 0x0008 ; // Error code for thaw altitude function
     return s32_returnval ;
@@ -373,7 +373,7 @@ int32_t thaw_altitude ( Thawed_Data * thawedPtr )
    Description - 
 */
 
-int32_t thaw_heading ( Thawed_Data * thawedPtr )
+int32_t thaw_heading ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 {
     int32_t s32_returnval = 0x0009 ; // Error code for thaw heading function
     return s32_returnval ;
@@ -386,7 +386,7 @@ int32_t thaw_heading ( Thawed_Data * thawedPtr )
    Description - 
 */
 
-int32_t thaw_yaw ( Thawed_Data * thawedPtr )
+int32_t thaw_yaw ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 {
     int32_t s32_returnval = 0x000A ; // Error code for thaw altitude function
     return s32_returnval ;
@@ -454,6 +454,19 @@ void print_raw_inputs () {
     Serial.print ( "\n " );
 
 }
+
+void print_thawed_data ( Frozen_Data * frozenPtr  , Thawed_Data * thawedPtr  ) 
+{
+    Serial.print ( thawedPtr->true_airspeed ) ;
+    Serial.print ( "    " ) ;
+    Serial.print ( frozenPtr -> yoke_x ) ;
+    Serial.print ( "\n" ) ;
+    
+
+  
+}
+
+
 // ==================== END DEBUG FUNCTIONS ======================
 
 
@@ -483,6 +496,11 @@ void setup() {
     pinMode( js_vry, INPUT );
     pinMode( js_sw , INPUT );
     pinMode (13, OUTPUT ) ;
+
+    // Status Lights 
+    pinMode ( crash_status_out , OUTPUT ) ; 
+    pinMode ( grounded_status_out , OUTPUT ) ; 
+    pinMode ( stall_warning_out , OUTPUT ) ; 
     
     // Rotary Encoder inputs 
     pinMode( rotEnc_dt, INPUT_PULLUP );
@@ -493,12 +511,12 @@ void setup() {
     attachInterrupt( digitalPinToInterrupt( rotEnc_dt ) , service_rotary_encoder , CHANGE );
     attachInterrupt( digitalPinToInterrupt( rotEnc_clk ) , service_rotary_encoder , CHANGE );
     
-    pinMode( clock_status, OUTPUT );
+    pinMode( clock_status_out, OUTPUT );
  
     startMillis = millis();
 }
 
-int counter = 0;
+ 
 
 void loop() {
 
@@ -508,13 +526,12 @@ void loop() {
     {
         lcd.setCursor(0,0);
         // ================= BEGIN MAIN EXECUTION CODE  ====================== 
-        digitalWrite(clock_status, !digitalRead(clock_status));  // Display the state of the timer - leave for debug purposes 
+        digitalWrite(clock_status_out, !digitalRead(clock_status_out));  // Display the state of the timer - leave for debug purposes 
         error_code = service_frozen_data ( &flsim_inputs) ;
-        read_frozen_struct ( &flsim_inputs ) ;                      // Debug function - not critical to operation 
-        thaw_data ( &flsim_inputs , &flight_status) ;
-        counter += 1 ;
-        lcd.print(counter);
-        
+        // read_frozen_struct ( &flsim_inputs ) ;                      // Debug function - not critical to operation 
+        print_thawed_data ( &flsim_inputs , &flight_status  ); 
+        thaw_data ( &flsim_inputs , &flight_status , &aircraft_situation) ;
+   
     
         // =================   END MAIN EXECUTION CODE ======================
         
