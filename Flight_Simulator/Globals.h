@@ -54,7 +54,7 @@
 // Digital Output
 #define clock_status_out 12
 #define crash_status_out 5 
-#define grounded_status_out 6
+#define airborne_status_out 6
 #define stall_warning_out 7 
 #define landing_gear_out 
 

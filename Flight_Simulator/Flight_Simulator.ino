@@ -76,7 +76,7 @@ Thawed_Data flight_status ;
 
 typedef struct Aircraft_Situation_t {
     bool landing_gear_down_status = false ;   
-    bool grounded_status = true ; 
+    bool airborne_status = false ; 
     bool stall_status = false ; 
     bool crash_stats ; 
     uint16_t fuel_level ; 
@@ -99,15 +99,24 @@ Aircraft_Situation aircraft_situation ;
 // TODO These are based off random google searches for a Cessna 172 . Let's follow a formal plane model when we get a chance. 
 // TODO make sure these are actually used? 
 
+//  WARNING LIGHTS 
+/* stall warning 
+ *  landing gear not down warning when landing 
+ *  landing criteria 
+ *  alt too high warning 
+ */
+
 int32_t rotEnc_count ; // Rotary Encoder Count. 
 #define MAX_AIRSPEED 176      // knots
 #define MAX_PITCH_DELTA 2     // degrees per second 
 #define MAX_ROLL_DELTA  3     // degrees per second
 #define MAX_RATE_OF_CLIMB 721  // feet per minute 
-#define MAX_ALTITUDE    14000  // feet 
-#define MAX_ACCELERATION 150   // ft/s2 
+#define MAX_ALTITUDE    14000  // feet      
 #define LIFTOFF_AIRSPEED 60    // knots 
-
+#define MAX_PITCH 12
+#define MIN_PITCH -12
+#define MAX_ROLL 12 
+#define MIN_ROLL -12 
 
 
 // =================== END GLOBAL VARS DECLARATIONS ====================
@@ -194,9 +203,9 @@ int32_t thaw_data ( Frozen_Data * frozenPtr ,
 
     service_aircraft_situation_outputs ( aircraftSituationPtr ) ;
     // Only perform these calculations if aircraft is airborne 
-    if ( aircraftSituationPtr->grounded_status == false ) 
+    if ( aircraftSituationPtr->airborne_status == true ) 
     { 
-        digitalWrite ( 5, HIGH ) ; 
+        // digitalWrite ( airborne_status_out, HIGH ) ; 
         s32_returnval &= thaw_groundspeed ( frozenPtr , thawedPtr ) ;
         s32_returnval &= thaw_pitch ( frozenPtr , thawedPtr ) ;
         s32_returnval &= thaw_roll ( frozenPtr , thawedPtr ) ;
@@ -215,12 +224,12 @@ int32_t check_aircraft_situation (  Frozen_Data * frozenPtr ,
                                     Thawed_Data * thawedPtr , 
                                     Aircraft_Situation * aircraftSituationPtr ) 
 {
-    // Check grounded status 
+    // Check grounded status - need a landing criteria 
     if ( ( thawedPtr->true_airspeed >= LIFTOFF_AIRSPEED ) && 
          ( frozenPtr->yoke_x > 650 )  // Todo is this efficient ? 
        )
    {
-      aircraftSituationPtr->grounded_status = false ; 
+      aircraftSituationPtr->airborne_status = true ; 
    } 
   return 0 ;
 }
@@ -228,14 +237,18 @@ int32_t check_aircraft_situation (  Frozen_Data * frozenPtr ,
 
 int32_t service_aircraft_situation_outputs ( Aircraft_Situation * aircraftSituationPtr  ) 
 {
-    if (aircraftSituationPtr -> grounded_status = true ) 
+    // Service Grounded status Light 
+    if (aircraftSituationPtr -> airborne_status == true ) 
     {
-      digitalWrite ( grounded_status_out , HIGH ) ;
+      digitalWrite ( airborne_status_out , HIGH ) ;
     }
     else 
     {
-      digitalWrite ( grounded_status_out , LOW ) ;
+      digitalWrite ( airborne_status_out , LOW ) ;
     }
+
+
+    
 }
 
 
@@ -330,27 +343,55 @@ int32_t thaw_groundspeed ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 /* function - thaw_pitch
    input - frozen data pointer, thawed data pointer 
    return - exit code 
-   Description - Thaws pitch based on true airspeed and grounded status . 
-   TODO make this only available when not grounded . 
+   Description - Thaws pitch based on true airspeed and grounded status . Max rate of change of pitch is +-2 degrees per second, or .1 degree per calculation (20 calc/second)
+                  dP = A * (yoke_reading-528 )    Yoke reading-528 is necessary to offset the joystick initial value
+      At max dP,  2  = A * (1024 - 528 ) A equals 0.0002020. 
 */
 
 int32_t thaw_pitch ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr  )
 {
     int32_t s32_returnval = 0x0006 ; // Error code for thaw pitch function
+
+    double new_pitch ; 
+    double old_pitch = thawedPtr->pitch ;
+    float A = 0.0002020f ;
+    int16_t yoke_reading = frozenPtr->yoke_x ; 
     
+    new_pitch = old_pitch + (A * (yoke_reading - 528) );   // TODO update this. I don't like adding things directly to a struct if the values aren't right initially 
+
+    if ( new_pitch > MAX_PITCH ) new_pitch = MAX_PITCH ; 
+    if ( new_pitch < MIN_PITCH ) new_pitch = MIN_PITCH ; 
+
+    thawedPtr->pitch  = new_pitch ; 
     
+    s32_returnval = 0; // Exit success 
     return s32_returnval ;
 }
 
 /* function - 
    input - 
    return - 
-   Description - 
+   Description -    Max roll delta is 2 degrees per second . 
 */
 
+// NOTE : positive roll means, as a pilot, turning clockwise 
 int32_t thaw_roll ( Frozen_Data * frozenPtr,  Thawed_Data * thawedPtr )
 {
-    int32_t s32_returnval = 0x0007 ; // Error code for thaw roll function
+
+    int32_t s32_returnval = 0 ;
+    double new_roll ; 
+    double old_roll = thawedPtr->roll ;
+    float A = -0.0004f ;
+    int16_t yoke_reading = frozenPtr->yoke_y ; 
+    
+    new_roll = old_roll + (A * (yoke_reading - 512) );   // TODO update this. I don't like adding things directly to a struct if the values aren't right initially 
+
+    if ( new_roll > MAX_PITCH ) new_roll = MAX_ROLL ; 
+    if ( new_roll < MIN_PITCH ) new_roll = MIN_ROLL ; 
+
+    thawedPtr->roll  = new_roll ; 
+    
+    s32_returnval = 0; // Exit success 
     return s32_returnval ;
 }
 
@@ -455,12 +496,16 @@ void print_raw_inputs () {
 
 }
 
-void print_thawed_data ( Frozen_Data * frozenPtr  , Thawed_Data * thawedPtr  ) 
+void print_thawed_data ( Frozen_Data * frozenPtr  , Thawed_Data * thawedPtr,Aircraft_Situation * aircraftSituationPtr    ) 
 {
+
+    Serial.print ( "Airspeed : ") ; 
     Serial.print ( thawedPtr->true_airspeed ) ;
-    Serial.print ( "    " ) ;
-    Serial.print ( frozenPtr -> yoke_x ) ;
-    Serial.print ( "\n" ) ;
+    Serial.print ( "    Pitch :" ) ;
+    Serial.print ( thawedPtr->pitch ) ;
+    Serial.print ( "    Roll :" ) ; 
+    Serial.print ( thawedPtr->roll ) ;
+    Serial.print ( "\n" ) ; 
     
 
   
@@ -499,7 +544,7 @@ void setup() {
 
     // Status Lights 
     pinMode ( crash_status_out , OUTPUT ) ; 
-    pinMode ( grounded_status_out , OUTPUT ) ; 
+    pinMode ( airborne_status_out , OUTPUT ) ; 
     pinMode ( stall_warning_out , OUTPUT ) ; 
     
     // Rotary Encoder inputs 
@@ -529,10 +574,9 @@ void loop() {
         digitalWrite(clock_status_out, !digitalRead(clock_status_out));  // Display the state of the timer - leave for debug purposes 
         error_code = service_frozen_data ( &flsim_inputs) ;
         // read_frozen_struct ( &flsim_inputs ) ;                      // Debug function - not critical to operation 
-        print_thawed_data ( &flsim_inputs , &flight_status  ); 
+        print_thawed_data ( &flsim_inputs , &flight_status ,&aircraft_situation   ); 
         thaw_data ( &flsim_inputs , &flight_status , &aircraft_situation) ;
    
-    
         // =================   END MAIN EXECUTION CODE ======================
         
         startMillis = currentMillis;  //IMPORTANT to save the start time of the current LED state.
